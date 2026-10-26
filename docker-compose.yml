@@ -1,0 +1,85 @@
+# Sobe a stack inteira: API, worker e beat do Celery, Postgres, RabbitMQ, Redis
+# e um recebedor de webhook de mentira para ver as notificações chegando.
+x-app: &app
+  build: .
+  environment:
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-only-insecure-key}
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-true}
+    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,web}
+    DATABASE_URL: postgres://cobranca:${POSTGRES_PASSWORD:-cobranca}@db:5432/cobranca
+    CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+    CELERY_RESULT_BACKEND: redis://redis:6379/0
+    WEBHOOK_SECRET: ${WEBHOOK_SECRET:-dev-webhook-secret}
+    OVERDUE_CHECK_SECONDS: "30"
+  depends_on:
+    db:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: cobranca
+      POSTGRES_USER: cobranca
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cobranca}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cobranca -d cobranca"]
+      interval: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    ports:
+      - "15672:15672" # painel web do RabbitMQ (guest/guest)
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  web:
+    <<: *app
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/')"]
+      interval: 10s
+      retries: 12
+
+  worker:
+    <<: *app
+    command: celery -A config worker --loglevel=info --concurrency=2
+    depends_on:
+      web:
+        condition: service_healthy
+
+  beat:
+    <<: *app
+    command: celery -A config beat --loglevel=info --schedule=/tmp/celerybeat-schedule
+    depends_on:
+      web:
+        condition: service_healthy
+
+  webhook-receiver:
+    build: .
+    command: python scripts/webhook_receiver.py
+    environment:
+      FAIL_FIRST: ${FAIL_FIRST:-2}
+
+volumes:
+  pgdata:
