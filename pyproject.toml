@@ -1,0 +1,53 @@
+[project]
+name = "cobranca-pix"
+version = "0.1.0"
+description = "API de cobranças com QR Code Pix, PDF de cobrança e jobs assíncronos com Celery"
+readme = "README.md"
+authors = [
+    { name = "jaimejunr", email = "jaimeodairbassojuniorjaime@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "celery[redis]>=5.6.3",
+    "dj-database-url>=3.1.2",
+    "django>=5.2",
+    "djangorestframework>=3.18.3",
+    "fpdf2>=2.8.9",
+    "gunicorn>=26.2.0",
+    "psycopg[binary]>=3.3.6",
+    "requests>=2.34.2",
+    "segno>=1.6.6",
+]
+
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-django>=4.14.0",
+    "ruff>=0.17.2",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+addopts = "--cov --cov-branch --cov-report=term-missing"
+testpaths = ["charges/tests"]
+
+[tool.coverage.run]
+source = ["charges", "config"]
+omit = ["*/migrations/*", "*/tests/*", "config/asgi.py", "config/wsgi.py"]
+
+[tool.coverage.report]
+fail_under = 90
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["*/migrations/*"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "DJ", "S", "SIM", "ANN"]
+ignore = ["ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/*" = ["S101", "S105", "S106", "ANN"]
